@@ -90,10 +90,11 @@ var (
 	levelFlag          string
 	debugFlag          int32
 
-	template  string
-	once      sync.Once
-	wait      sync.WaitGroup
-	closeChan chan struct{}
+	template          string
+	once              sync.Once
+	wait              sync.WaitGroup
+	closeChan         chan struct{}
+	closedCatchStdout bool
 )
 
 func Init() {
@@ -255,14 +256,14 @@ func setLogConf(logConfig string) {
 		logConfigContent := generateDefaultConfig()
 		_ = ioutil.WriteFile(path, []byte(logConfigContent), os.ModePerm)
 	}
-	fmt.Printf("load log config %s \n", path)
+	fmt.Fprintf(os.Stderr, "load log config %s \n", path)
 	logger, err := seelog.LoggerFromConfigAsFile(path)
 	if err != nil {
-		fmt.Println("init logger error", err)
+		fmt.Fprintln(os.Stderr, "init logger error", err)
 		return
 	}
 	if err := logger.SetAdditionalStackDepth(1); err != nil {
-		fmt.Printf("cannot set logger stack depth: %v\n", err)
+		fmt.Fprintf(os.Stderr, "cannot set logger stack depth: %v\n", err)
 		return
 	}
 	logtailLogger = logger
@@ -298,9 +299,18 @@ func generateDefaultConfig() string {
 
 // Close the logger and recover the stdout and stderr
 func Close() {
+	CloseCatchStdout()
+	logtailLogger.Close()
+}
+
+// CloseCatchStdout close the goroutine with the catching stdout task.
+func CloseCatchStdout() {
+	if consoleFlag || closedCatchStdout {
+		return
+	}
 	close(closeChan)
 	wait.Wait()
-	logtailLogger.Close()
+	closedCatchStdout = true
 }
 
 // catchStandardOutput catch the stdout and stderr to the ilogtail logger.
